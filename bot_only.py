@@ -263,4 +263,18 @@ async def finish_event_cmd(message: types.Message):
 if __name__ == "__main__":
     print("🚀 Бот спортивных прогнозов запущен!")
     print("👑 Админ: /add_event, /finish")
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=True
+
+                        
+                           
+                           @dp.message_handler(commands=['check_events'])
+async def check_events(message: types.Message):
+    cursor.execute("SELECT id, title, status FROM events")
+    rows = cursor.fetchall()
+    if not rows:
+        await message.answer("Нет событий в базе")
+    else:
+        text = "События в базе:\n"
+        for row in rows:
+            text += f"ID: {row[0]}, Title: {row[1]}, Status: {row[2]}\n"
+        await message.answer(text)
