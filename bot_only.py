@@ -11,7 +11,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 # ========== КОНФИГ ==========
-BOT_TOKEN = "8769773881:AAGUNmK-uTRxIQClaWHVQpr3UomSDVlstiI"
+BOT_TOKEN = "8769773881:AAGKm830zsEQ5HDjPNoF_LcUqw_TbxybN7s"
 ADMIN_IDS = [6141160793]
 
 # ========== БАЗА ДАННЫХ ==========
