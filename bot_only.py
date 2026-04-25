@@ -96,14 +96,22 @@ def get_leaderboard():
     cursor.execute("SELECT full_name, username, points FROM users ORDER BY points DESC LIMIT 10")
     return [(row[0] or row[1], row[2]) for row in cursor.fetchall()]
 
-# ========== ТЕЛЕГРАМ БОТ ==========
+# ========= ТЕЛЕГРАМ БОТ =========
+
 storage = MemoryStorage()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot, storage=storage)
 
-main_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-main_keyboard.add("📋 Активные события")
-main_keyboard.add("🏆 Мой рейтинг", "📊 Таблица лидеров")
+from aiogram.types import KeyboardButton, WebAppInfo, ReplyKeyboardMarkup
+
+# URL Mini App (замени после деплоя второго сервиса)
+WEB_APP_URL = "https://твой-сервис.up.railway.app/miniapp"
+web_app = WebAppInfo(url=WEB_APP_URL)
+
+main_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+main_keyboard.add(KeyboardButton("🟢 Активные события"))
+main_keyboard.add(KeyboardButton("🔴 Мой рейтинг"), KeyboardButton("🔵 Таблица лидеров"))
+main_keyboard.add(KeyboardButton("📱 Открыть прогнозы", web_app=web_app))
 
 class AddEvent(StatesGroup):
     title = State()
