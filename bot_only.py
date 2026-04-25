@@ -261,11 +261,6 @@ async def finish_event_cmd(message: types.Message):
     )
 
 if __name__ == "__main__":
-    import asyncio
-    print("🚀 Бот запущен!")
-    
-    async def main():
-        await bot.delete_webhook()
-        executor.start_polling(dp, skip_updates=True)
-    
-    asyncio.run(main())
+    print("🚀 Бот спортивных прогнозов запущен!")
+    print("👑 Админ: /add_event, /finish")
+    executor.start_polling(dp, skip_updates=True)
