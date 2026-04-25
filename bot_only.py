@@ -3,7 +3,7 @@ import json
 import sqlite3
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton, WebAppInfo, ReplyKeyboardMarkup
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
@@ -11,13 +11,18 @@ from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 # ========== КОНФИГ ==========
-BOT_TOKEN = "8769773881:AAGKm830zsEQ5HDjPNoF_LcUqw_TbxybN7s"
+BOT_TOKEN = "ТВОЙ_ТОКЕН"  # ВСТАВЬ СВОЙ ТОКЕН
 ADMIN_IDS = [6141160793]
+WEB_APP_URL = "https://api-production-5769e.up.railway.app/miniapp"
 
-# ========== БАЗА ДАННЫХ ==========
+# ========== БАЗА ДАННЫХ (ОБЩАЯ ЧЕРЕЗ VOLUME) ==========
+# Создаём папку /data если её нет
+os.makedirs("/data", exist_ok=True)
+
 db_conn = sqlite3.connect("/data/sports_bot.db", check_same_thread=False)
 cursor = db_conn.cursor()
 
+# Создаём таблицы
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,11 +55,7 @@ def add_event(title, description, options):
 
 def get_active_events():
     cursor.execute("SELECT * FROM events WHERE status = 'active' ORDER BY created_at DESC")
-    rows = cursor.fetchall()
-    print(f"Найдено активных событий: {len(rows)}")
-    for row in rows:
-        print(f"Событие: {row[1]}, статус: {row[4]}")
-    return rows
+    return cursor.fetchall()
 
 def get_event(event_id):
     cursor.execute("SELECT * FROM events WHERE id = ?", (event_id,))
@@ -83,8 +84,10 @@ def place_bet(user_id, event_id, selected_option):
     cursor.execute("SELECT id FROM bets WHERE user_id = ? AND event_id = ?", (user_id, event_id))
     if cursor.fetchone():
         return False
-    cursor.execute("INSERT INTO bets (user_id, event_id, selected_option, bet_time) VALUES (?, ?, ?, ?)",
-                   (user_id, event_id, selected_option, datetime.now()))
+    cursor.execute(
+        "INSERT INTO bets (user_id, event_id, selected_option, bet_time) VALUES (?, ?, ?, ?)",
+        (user_id, event_id, selected_option, datetime.now())
+    )
     db_conn.commit()
     return True
 
@@ -102,21 +105,16 @@ def get_leaderboard():
     cursor.execute("SELECT full_name, username, points FROM users ORDER BY points DESC LIMIT 10")
     return [(row[0] or row[1], row[2]) for row in cursor.fetchall()]
 
-# ========= ТЕЛЕГРАМ БОТ =========
-
+# ========== ИНИЦИАЛИЗАЦИЯ БОТА ==========
 storage = MemoryStorage()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot, storage=storage)
 
-from aiogram.types import KeyboardButton, WebAppInfo, ReplyKeyboardMarkup
-
-# URL Mini App (замени после деплоя второго сервиса)
-WEB_APP_URL = "https://api-production-5769e.up.railway.app/miniapp"
+# Клавиатура
 web_app = WebAppInfo(url=WEB_APP_URL)
-
 main_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-main_keyboard.add(KeyboardButton("🟢 Активные события"))
-main_keyboard.add(KeyboardButton("🔴 Мой рейтинг"), KeyboardButton("🔵 Таблица лидеров"))
+main_keyboard.add(KeyboardButton("Активные события"))
+main_keyboard.add(KeyboardButton("Мой рейтинг"), KeyboardButton("Таблица лидеров"))
 main_keyboard.add(KeyboardButton("📱 Открыть прогнозы", web_app=web_app))
 
 class AddEvent(StatesGroup):
@@ -124,6 +122,7 @@ class AddEvent(StatesGroup):
     description = State()
     options = State()
 
+# ========== ОБРАБОТЧИКИ ==========
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     user = message.from_user
@@ -137,10 +136,9 @@ async def start(message: types.Message):
         reply_markup=main_keyboard
     )
 
-@dp.message_handler(Text(equals="📋 Активные события"))
+@dp.message_handler(lambda message: message.text == "Активные события")
 async def show_events(message: types.Message):
     events = get_active_events()
-    print(f"DEBUG: найдено событий - {len(events)}")  # Добавь эту строку
     if not events:
         await message.answer("😔 Нет активных событий\n\nДобавь через /add_event")
         return
@@ -156,6 +154,23 @@ async def show_events(message: types.Message):
             reply_markup=keyboard
         )
 
+@dp.message_handler(lambda message: message.text == "Мой рейтинг")
+async def my_rating(message: types.Message):
+    points = get_user_points(message.from_user.id)
+    await message.answer(f"📊 *Твой счёт: {points} баллов*", parse_mode="Markdown")
+
+@dp.message_handler(lambda message: message.text == "Таблица лидеров")
+async def leaderboard(message: types.Message):
+    leaders = get_leaderboard()
+    if not leaders:
+        await message.answer("🏆 Таблица лидеров пуста\n\nБудь первым!")
+        return
+    text = "🏆 *ТАБЛИЦА ЛИДЕРОВ* 🏆\n\n"
+    for i, (name, points) in enumerate(leaders, 1):
+        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+        text += f"{medal} *{name}* — {points} баллов\n"
+    await message.answer(text, parse_mode="Markdown")
+
 @dp.callback_query_handler(lambda c: c.data.startswith("bet_"))
 async def place_bet_callback(callback: types.CallbackQuery):
     _, event_id_str, option = callback.data.split("_", 2)
@@ -170,26 +185,9 @@ async def place_bet_callback(callback: types.CallbackQuery):
         options = json.loads(event[3])
         coef = options.get(option, 1.0)
         await callback.answer(f"✅ Прогноз принят! {option} (x{coef})")
-        await callback.message.answer(f"✨ Прогноз принят!\n{option} (x{coef})\n💰 Потенциальный выигрыш: {int(10 * coef)} баллов")
+        await callback.message.answer(f"✨ Прогноз принят!\n{option} (x{coef})")
     else:
         await callback.answer("⚠️ Ты уже делал прогноз!", show_alert=True)
-
-@dp.message_handler(Text(equals="🏆 Мой рейтинг"))
-async def my_rating(message: types.Message):
-    points = get_user_points(message.from_user.id)
-    await message.answer(f"📊 *Твой счёт: {points} баллов*", parse_mode="Markdown")
-
-@dp.message_handler(Text(equals="📊 Таблица лидеров"))
-async def leaderboard(message: types.Message):
-    leaders = get_leaderboard()
-    if not leaders:
-        await message.answer("🏆 Таблица лидеров пуста\n\nБудь первым!")
-        return
-    text = "🏆 *ТАБЛИЦА ЛИДЕРОВ* 🏆\n\n"
-    for i, (name, points) in enumerate(leaders, 1):
-        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-        text += f"{medal} *{name}* — {points} баллов\n"
-    await message.answer(text, parse_mode="Markdown")
 
 @dp.message_handler(commands=['add_event'])
 async def add_event_start(message: types.Message):
@@ -210,8 +208,7 @@ async def add_event_desc(message: types.Message, state: FSMContext):
     await message.answer(
         "📝 Введите *варианты* с коэффициентами\n\n"
         "Формат: `Вариант1:коэффициент, Вариант2:коэффициент`\n"
-        "Пример: `Победа А:3.5, Ничья:3.0, Победа Б:3.2`\n\n"
-        "Если коэффициент не указать, будет 1.0",
+        "Пример: `Победа А:3.5, Ничья:3.0, Победа Б:3.2`",
         parse_mode="Markdown"
     )
 
@@ -233,7 +230,7 @@ async def add_event_opts(message: types.Message, state: FSMContext):
     await message.answer(
         f"✅ *Событие добавлено!*\n\n"
         f"📋 {data['title']}\n"
-        f"📊 Варианты: {', '.join([f'{k} (x{v})' for k,v in options.items()])}\n\n"
+        f"📊 {', '.join([f'{k} (x{v})' for k,v in options.items()])}\n\n"
         f"🔢 ID: `{event_id}`\n"
         f"Завершить: `/finish {event_id} Победитель`",
         parse_mode="Markdown"
@@ -247,16 +244,16 @@ async def finish_event_cmd(message: types.Message):
         return
     parts = message.text.split()
     if len(parts) != 3:
-        await message.answer("📝 Использование: `/finish ID Победитель`\nПример: `/finish 1 Победа А`", parse_mode="Markdown")
+        await message.answer("📝 Использование: `/finish ID Победитель`", parse_mode="Markdown")
         return
     _, event_id_str, winner = parts
     event_id = int(event_id_str)
     event = get_event(event_id)
     if not event:
-        await message.answer(f"❌ Событие с ID {event_id} не найдено!")
+        await message.answer(f"❌ Событие не найдено!")
         return
     if event[4] != 'active':
-        await message.answer(f"⚠️ Событие *{event[1]}* уже завершено!", parse_mode="Markdown")
+        await message.answer(f"⚠️ Событие уже завершено!", parse_mode="Markdown")
         return
     winners_count, points = finish_event(event_id, winner)
     await message.answer(
@@ -267,35 +264,8 @@ async def finish_event_cmd(message: types.Message):
         parse_mode="Markdown"
     )
 
-@dp.message_handler(commands=['check_events'])
-async def check_events(message: types.Message):
-    cursor.execute("SELECT id, title, status FROM events")
-    rows = cursor.fetchall()
-    if not rows:
-        await message.answer("❌ Нет событий в базе")
-    else:
-        text = "📋 События в базе:\n\n"
-        for row in rows:
-            text += f"ID: {row[0]}\nНазвание: {row[1]}\nСтатус: {row[2]}\n\n"
-        await message.answer(text)
-
-
-@dp.message_handler(commands=['debug_events'])
-async def debug_events(message: types.Message):
-    cursor.execute("SELECT * FROM events")
-    rows = cursor.fetchall()
-    if not rows:
-        await message.answer("❌ Нет событий")
-    else:
-        for row in rows:
-            await message.answer(f"ID: {row[0]}, Title: {row[1]}, Status: {row[4]}, Created: {row[6]}")
-
-
+# ========== ЗАПУСК ==========
 if __name__ == "__main__":
     print("🚀 Бот спортивных прогнозов запущен!")
     print("👑 Админ: /add_event, /finish")
     executor.start_polling(dp, skip_updates=True)
-
-                        
-                           
-                          
