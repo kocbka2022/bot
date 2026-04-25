@@ -41,8 +41,10 @@ cursor.execute('''
 db_conn.commit()
 
 def add_event(title, description, options):
-    cursor.execute("INSERT INTO events (title, description, options, status, created_at) VALUES (?, ?, ?, 'active', ?)",
-                   (title, description, json.dumps(options), datetime.now()))
+    cursor.execute(
+        "INSERT INTO events (title, description, options, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+        (title, description, json.dumps(options), datetime.now())
+    )
     db_conn.commit()
     return cursor.lastrowid
 
