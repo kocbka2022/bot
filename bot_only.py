@@ -1,9 +1,9 @@
-﻿import os
+import os
 import json
 import sqlite3
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton, WebAppInfo, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
@@ -13,7 +13,6 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 # ========== КОНФИГ ==========
 BOT_TOKEN = "8769773881:AAEBc7dTnQV4itt2tjmoIjaFoI922V-LzT8"
 ADMIN_IDS = [6141160793]
-RAILWAY_URL = "https://sports-bot.up.railway.app"  # URL твоего API сервиса
 
 # ========== БАЗА ДАННЫХ ==========
 db_conn = sqlite3.connect("sports_bot.db", check_same_thread=False)
@@ -93,35 +92,18 @@ def get_user_points(user_id):
     res = cursor.fetchone()
     return res[0] if res else 0
 
-def get_user_history(user_id):
-    cursor.execute('''
-        SELECT e.title, b.selected_option, b.is_win, b.points_earned, e.options
-        FROM bets b JOIN events e ON b.event_id = e.id 
-        WHERE b.user_id = ? ORDER BY b.bet_time DESC LIMIT 20
-    ''', (user_id,))
-    result = []
-    for row in cursor.fetchall():
-        title, option, is_win, points, options_json = row
-        options = json.loads(options_json)
-        coefficient = options.get(option, 1.0)
-        result.append({"title": title, "selected_option": option, "is_win": is_win, 
-                       "points_earned": points, "coefficient": coefficient})
-    return result
-
 def get_leaderboard():
     cursor.execute("SELECT full_name, username, points FROM users ORDER BY points DESC LIMIT 10")
-    return [{"name": row[0] or row[1] or f"User_{i}", "points": row[2]} for i, row in enumerate(cursor.fetchall())]
+    return [(row[0] or row[1], row[2]) for row in cursor.fetchall()]
 
 # ========== ТЕЛЕГРАМ БОТ ==========
 storage = MemoryStorage()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot, storage=storage)
 
-web_app = WebAppInfo(url=f"{RAILWAY_URL}/miniapp")
-main_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-main_keyboard.add(KeyboardButton("📋 Активные события"))
-main_keyboard.add(KeyboardButton("🏆 Мой рейтинг"), KeyboardButton("📊 Таблица лидеров"))
-main_keyboard.add(KeyboardButton("📱 Открыть прогнозы", web_app=web_app))
+main_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+main_keyboard.add("📋 Активные события")
+main_keyboard.add("🏆 Мой рейтинг", "📊 Таблица лидеров")
 
 class AddEvent(StatesGroup):
     title = State()
@@ -134,8 +116,10 @@ async def start(message: types.Message):
     register_user(user.id, user.username, user.full_name)
     await message.answer(
         f"🏅 Добро пожаловать, {user.full_name}!\n\n"
-        f"📊 Правильный прогноз = 10 × коэффициент\n"
-        f"📱 Нажми '📱 Открыть прогнозы'", 
+        f"📊 Правильный прогноз = 10 × коэффициент\n\n"
+        f"📝 Команды:\n"
+        f"/add_event - добавить событие (админ)\n"
+        f"/finish ID Победитель - завершить событие (админ)",
         reply_markup=main_keyboard
     )
 
@@ -143,17 +127,19 @@ async def start(message: types.Message):
 async def show_events(message: types.Message):
     events = get_active_events()
     if not events:
-        await message.answer("Нет активных событий. Добавь через /add_event")
+        await message.answer("😔 Нет активных событий\n\nДобавь через /add_event")
         return
     for event in events:
         event_id, title, description, options_json, status, winner, created_at = event
         options = json.loads(options_json)
         options_text = "\n".join([f"  • {opt} — x{coef}" for opt, coef in options.items()])
-        buttons = [[InlineKeyboardButton(f"{opt} (x{coef})", callback_data=f"bet_{event_id}_{opt}")] 
-                   for opt, coef in options.items()]
+        buttons = [[InlineKeyboardButton(f"{opt} (x{coef})", callback_data=f"bet_{event_id}_{opt}")] for opt, coef in options.items()]
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        await message.answer(f"⚽️ *{title}*\n\n📝 {description}\n\n📊 *Варианты:*\n{options_text}", 
-                           parse_mode="Markdown", reply_markup=keyboard)
+        await message.answer(
+            f"⚽️ *{title}*\n\n📝 {description}\n\n📊 *Варианты:*\n{options_text}",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
 
 @dp.callback_query_handler(lambda c: c.data.startswith("bet_"))
 async def place_bet_callback(callback: types.CallbackQuery):
@@ -162,56 +148,57 @@ async def place_bet_callback(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     event = get_event(event_id)
     if not event or event[4] != 'active':
-        await callback.answer("Событие завершено!", show_alert=True)
+        await callback.answer("⏰ Событие завершено!", show_alert=True)
         return
     register_user(user_id, callback.from_user.username, callback.from_user.full_name)
     if place_bet(user_id, event_id, option):
         options = json.loads(event[3])
         coef = options.get(option, 1.0)
         await callback.answer(f"✅ Прогноз принят! {option} (x{coef})")
-        await callback.message.answer(f"✨ Прогноз принят!\n{option} (x{coef})")
+        await callback.message.answer(f"✨ Прогноз принят!\n{option} (x{coef})\n💰 Потенциальный выигрыш: {int(10 * coef)} баллов")
     else:
         await callback.answer("⚠️ Ты уже делал прогноз!", show_alert=True)
 
 @dp.message_handler(Text(equals="🏆 Мой рейтинг"))
 async def my_rating(message: types.Message):
     points = get_user_points(message.from_user.id)
-    history = get_user_history(message.from_user.id)
-    text = f"📊 Твой счёт: {points} баллов\n\n📝 История:\n"
-    for bet in history[:10]:
-        status = f"✅ +{bet['points_earned']}" if bet['is_win'] else "⏳ ожидает"
-        text += f"• {bet['title']}: {bet['selected_option']} — {status}\n"
-    await message.answer(text)
+    await message.answer(f"📊 *Твой счёт: {points} баллов*", parse_mode="Markdown")
 
 @dp.message_handler(Text(equals="📊 Таблица лидеров"))
 async def leaderboard(message: types.Message):
     leaders = get_leaderboard()
     if not leaders:
-        await message.answer("Таблица лидеров пуста")
+        await message.answer("🏆 Таблица лидеров пуста\n\nБудь первым!")
         return
-    text = "🏆 ТАБЛИЦА ЛИДЕРОВ 🏆\n\n"
-    for i, user in enumerate(leaders, 1):
+    text = "🏆 *ТАБЛИЦА ЛИДЕРОВ* 🏆\n\n"
+    for i, (name, points) in enumerate(leaders, 1):
         medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-        text += f"{medal} {user['name']} — {user['points']} баллов\n"
-    await message.answer(text)
+        text += f"{medal} *{name}* — {points} баллов\n"
+    await message.answer(text, parse_mode="Markdown")
 
 @dp.message_handler(commands=['add_event'])
 async def add_event_start(message: types.Message):
     if message.from_user.id in ADMIN_IDS:
         await AddEvent.title.set()
-        await message.answer("📝 Введите название события:")
+        await message.answer("📝 Введите *название* события:", parse_mode="Markdown")
 
 @dp.message_handler(state=AddEvent.title)
 async def add_event_title(message: types.Message, state: FSMContext):
     await state.update_data(title=message.text)
     await AddEvent.next()
-    await message.answer("📝 Введите описание:")
+    await message.answer("📝 Введите *описание* события:", parse_mode="Markdown")
 
 @dp.message_handler(state=AddEvent.description)
 async def add_event_desc(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text)
     await AddEvent.next()
-    await message.answer("📝 Введите варианты с коэффициентами\nПример: Победа А:3.5, Ничья:3.0, Победа Б:3.2")
+    await message.answer(
+        "📝 Введите *варианты* с коэффициентами\n\n"
+        "Формат: `Вариант1:коэффициент, Вариант2:коэффициент`\n"
+        "Пример: `Победа А:3.5, Ничья:3.0, Победа Б:3.2`\n\n"
+        "Если коэффициент не указать, будет 1.0",
+        parse_mode="Markdown"
+    )
 
 @dp.message_handler(state=AddEvent.options)
 async def add_event_opts(message: types.Message, state: FSMContext):
@@ -224,30 +211,48 @@ async def add_event_opts(message: types.Message, state: FSMContext):
         else:
             options[part] = 1.0
     if len(options) < 2:
-        await message.answer("Нужно минимум 2 варианта!")
+        await message.answer("❌ Нужно минимум 2 варианта!", parse_mode="Markdown")
         return
     data = await state.get_data()
     event_id = add_event(data['title'], data['description'], options)
-    await message.answer(f"✅ Событие '{data['title']}' добавлено! ID: {event_id}")
+    await message.answer(
+        f"✅ *Событие добавлено!*\n\n"
+        f"📋 {data['title']}\n"
+        f"📊 Варианты: {', '.join([f'{k} (x{v})' for k,v in options.items()])}\n\n"
+        f"🔢 ID: `{event_id}`\n"
+        f"Завершить: `/finish {event_id} Победитель`",
+        parse_mode="Markdown"
+    )
     await state.finish()
 
 @dp.message_handler(commands=['finish'])
 async def finish_event_cmd(message: types.Message):
     if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав!")
         return
     parts = message.text.split()
     if len(parts) != 3:
-        await message.answer("Использование: /finish ID Победитель")
+        await message.answer("📝 Использование: `/finish ID Победитель`\nПример: `/finish 1 Победа А`", parse_mode="Markdown")
         return
     _, event_id_str, winner = parts
     event_id = int(event_id_str)
     event = get_event(event_id)
-    if not event or event[4] != 'active':
-        await message.answer("Событие не найдено или уже завершено!")
+    if not event:
+        await message.answer(f"❌ Событие с ID {event_id} не найдено!")
+        return
+    if event[4] != 'active':
+        await message.answer(f"⚠️ Событие *{event[1]}* уже завершено!", parse_mode="Markdown")
         return
     winners_count, points = finish_event(event_id, winner)
-    await message.answer(f"✅ Событие завершено!\nПобедитель: {winner}\nНачислено: {points} баллов ({winners_count} чел.)")
+    await message.answer(
+        f"✅ *Событие завершено!*\n\n"
+        f"📋 {event[1]}\n"
+        f"🏆 Победитель: *{winner}*\n"
+        f"💰 Начислено: *{points} баллов* ({winners_count} чел.)",
+        parse_mode="Markdown"
+    )
 
 if __name__ == "__main__":
-    print("🚀 Бот запущен!")
+    print("🚀 Бот спортивных прогнозов запущен!")
+    print("👑 Админ: /add_event, /finish")
     executor.start_polling(dp, skip_updates=True)
