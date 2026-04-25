@@ -15,7 +15,7 @@ BOT_TOKEN = "8769773881:AAGKm830zsEQ5HDjPNoF_LcUqw_TbxybN7s"
 ADMIN_IDS = [6141160793]
 
 # ========== БАЗА ДАННЫХ ==========
-db_conn = sqlite3.connect("sports_bot.db", check_same_thread=False)
+db_conn = sqlite3.connect("/data/sports_bot.db", check_same_thread=False)
 cursor = db_conn.cursor()
 
 cursor.execute('''
