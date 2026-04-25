@@ -13,7 +13,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 # ========== КОНФИГ ==========
 BOT_TOKEN = "8769773881:AAHTAqNMM69ddflLgANr2JIbBcJbuUYAPNM"  # ВСТАВЬ СВОЙ ТОКЕН
 ADMIN_IDS = [6141160793]
-WEB_APP_URL = "api-production-7faf.up.railway.app/miniapp"
+WEB_APP_URL = "https://api-production-7faf.up.railway.app/miniapp"
 
 # ========== БАЗА ДАННЫХ (ОБЩАЯ ЧЕРЕЗ VOLUME) ==========
 # Создаём папку /data если её нет
