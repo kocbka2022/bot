@@ -2,207 +2,68 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Спортивные прогнозы</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
+            font-family: system-ui, -apple-system, sans-serif;
             padding: 16px;
-        }
-        .tab-bar {
-            display: flex;
-            margin-bottom: 20px;
-            background: var(--tg-theme-secondary-bg-color, #e9ecef);
-            border-radius: 12px;
-            padding: 4px;
-        }
-        .tab {
-            flex: 1;
-            text-align: center;
-            padding: 12px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 500;
-        }
-        .tab.active {
-            background: var(--tg-theme-button-color, #2481cc);
-            color: white;
+            background: #ffffff;
         }
         .event-card {
-            background: var(--tg-theme-secondary-bg-color, #f8f9fa);
-            border-radius: 16px;
+            border: 1px solid #ddd;
+            border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
         }
-        .event-title {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-        .event-desc {
-            font-size: 14px;
-            color: var(--tg-theme-hint-color, #6c757d);
-            margin-bottom: 16px;
-        }
-        .options {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .option-btn {
-            background: var(--tg-theme-button-color, #2481cc);
+        button {
+            background: #2481cc;
             color: white;
             border: none;
             padding: 10px 16px;
-            border-radius: 12px;
-            font-size: 14px;
+            border-radius: 8px;
+            margin: 5px;
             cursor: pointer;
-            flex: 1;
-        }
-        .my-points {
-            background: var(--tg-theme-button-color, #2481cc);
-            color: white;
-            border-radius: 16px;
-            padding: 20px;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .my-points-value {
-            font-size: 36px;
-            font-weight: bold;
-        }
-        .leaderboard-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 12px;
-            border-bottom: 1px solid #dee2e6;
-        }
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #6c757d;
         }
     </style>
 </head>
 <body>
-    <div id="app">
-        <div class="tab-bar">
-            <div class="tab" :class="{active: activeTab === 'events'}" @click="activeTab = 'events'">📋 События</div>
-            <div class="tab" :class="{active: activeTab === 'rating'}" @click="activeTab = 'rating'">🏆 Рейтинг</div>
-            <div class="tab" :class="{active: activeTab === 'leaders'}" @click="activeTab = 'leaders'">📊 Лидеры</div>
-        </div>
-
-        <div v-show="activeTab === 'events'">
-            <div v-if="loading" class="empty-state">Загрузка...</div>
-            <div v-else-if="events.length === 0" class="empty-state">😔 Нет активных событий</div>
-            <div v-else>
-                <div v-for="event in events" :key="event.id" class="event-card">
-                    <div class="event-title">⚽️ {{ event.title }}</div>
-                    <div class="event-desc">{{ event.description }}</div>
-                    <div class="options">
-                        <button v-for="(coef, opt) in event.options" :key="opt" class="option-btn" @click="placeBet(event.id, opt)">
-                            {{ opt }}<br><small>x{{ coef }}</small>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div v-show="activeTab === 'rating'">
-            <div class="my-points">
-                <div>Ваши баллы</div>
-                <div class="my-points-value">{{ userPoints }}</div>
-            </div>
-        </div>
-
-        <div v-show="activeTab === 'leaders'">
-            <div v-if="leaders.length === 0" class="empty-state">🏆 Таблица лидеров пуста</div>
-            <div v-else>
-                <div v-for="(user, idx) in leaders" :key="idx" class="leaderboard-item">
-                    <div>{{ getMedal(idx+1) }}</div>
-                    <div>{{ user.name }}</div>
-                    <div><b>{{ user.points }}</b> баллов</div>
-                </div>
-            </div>
-        </div>
+    <h1>🏆 Спортивные прогнозы</h1>
+    
+    <div id="events">
+        <p>Загрузка...</p>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
     <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.ready();
-
-        const userId = tg.initDataUnsafe?.user?.id || Math.floor(Math.random() * 1000000);
-
-        new Vue({
-            el: '#app',
-            data: {
-                activeTab: 'events',
-                events: [],
-                userPoints: 0,
-                leaders: [],
-                loading: false
-            },
-            mounted() {
-                this.loadEvents();
-                this.loadPoints();
-                this.loadLeaders();
-            },
-            methods: {
-                getMedal(rank) {
-                    if (rank === 1) return '🥇';
-                    if (rank === 2) return '🥈';
-                    if (rank === 3) return '🥉';
-                    return rank;
-                },
-                async loadEvents() {
-                    this.loading = true;
-                    try {
-                        const res = await fetch('/api/events');
-                        const data = await res.json();
-                        this.events = data.events || [];
-                    } catch(e) { console.error(e); }
-                    this.loading = false;
-                },
-                async loadPoints() {
-                    try {
-                        const res = await fetch(`/api/user/${userId}/points`);
-                        const data = await res.json();
-                        this.userPoints = data.points || 0;
-                    } catch(e) { console.error(e); }
-                },
-                async loadLeaders() {
-                    try {
-                        const res = await fetch('/api/leaders');
-                        const data = await res.json();
-                        this.leaders = data.leaders || [];
-                    } catch(e) { console.error(e); }
-                },
-                async placeBet(eventId, option) {
-                    try {
-                        const res = await fetch('/api/bet', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ user_id: userId, event_id: eventId, option: option })
-                        });
-                        const result = await res.json();
-                        if (result.success) {
-                            tg.showAlert('✅ Прогноз принят!');
-                            this.loadEvents();
-                        } else {
-                            tg.showAlert(result.error || 'Ошибка');
-                        }
-                    } catch(e) {
-                        tg.showAlert('Ошибка соединения');
-                    }
+        // Проверка работы API
+        fetch('/api/events')
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('events');
+                if (data.events && data.events.length > 0) {
+                    container.innerHTML = data.events.map(event => `
+                        <div class="event-card">
+                            <h3>⚽️ ${event.title}</h3>
+                            <p>${event.description}</p>
+                            <div>
+                                ${Object.keys(event.options).map(opt => `
+                                    <button onclick="placeBet(${event.id}, '${opt}')">${opt} (x${event.options[opt]})</button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<p>Нет активных событий</p>';
                 }
-            }
-        });
+            })
+            .catch(err => {
+                document.getElementById('events').innerHTML = '<p>Ошибка загрузки: ' + err.message + '</p>';
+            });
+
+        function placeBet(eventId, option) {
+            alert(`Прогноз: ${option}\n(API в разработке)`);
+        }
     </script>
 </body>
 </html>
