@@ -264,6 +264,240 @@ async def finish_event_cmd(message: types.Message):
         parse_mode="Markdown"
     )
 
+
+@dp.message_handler(commands=['delete_event'])
+async def delete_event_cmd(message: types.Message):
+    # Проверяем, что команду выполняет администратор
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ У вас нет прав для этой команды!")
+        return
+
+    # Разбираем ID события из сообщения (формат: /delete_event 123)
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.answer(
+            "📝 *Как удалить событие:*\n\n"
+            "`/delete_event ID_события`\n\n"
+            "Пример: `/delete_event 5`\n"
+            "Чтобы узнать ID, используйте `/list_events`.",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        event_id = int(parts[1])
+    except ValueError:
+        await message.answer("❌ ID события должен быть числом!")
+        return
+
+    # Проверяем, существует ли событие в базе данных
+    cursor.execute("SELECT id, title, status FROM events WHERE id = ?", (event_id,))
+    event = cursor.fetchone()
+
+    if not event:
+        await message.answer(f"❌ Событие с ID `{event_id}` не найдено!", parse_mode="Markdown")
+        return
+
+    # Удаляем событие из базы данных
+    cursor.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    db_conn.commit()
+
+    # Сообщаем об успешном удалении
+    await message.answer(f"✅ Событие *{event[1]}* (ID: {event_id}) было успешно удалено из базы данных.", parse_mode="Markdown")
+
+
+
+
+# ========== АДМИН-ПАНЕЛЬ (УПРАВЛЕНИЕ СОБЫТИЯМИ) ==========
+@dp.message_handler(commands=['admin'])
+async def admin_panel(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав!")
+        return
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton("📋 Список событий", callback_data="admin_list_events")],
+        [InlineKeyboardButton("➕ Добавить событие", callback_data="admin_add_event_short")]
+    ])
+    await message.answer("🔧 *Админ-панель*\n\nВыбери действие:", parse_mode="Markdown", reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data == "admin_list_events")
+async def admin_list_events(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Нет прав!")
+        return
+    
+    cursor.execute("SELECT id, title, status FROM events ORDER BY id DESC")
+    events = cursor.fetchall()
+    
+    if not events:
+        await callback.message.answer("📭 Нет событий в базе")
+        await callback.answer()
+        return
+    
+    for event in events:
+        event_id, title, status = event
+        status_emoji = "🟢" if status == "active" else "🔴"
+        status_text = "активно" if status == "active" else "завершено"
+        
+        buttons = []
+        if status == "active":
+            buttons.append(InlineKeyboardButton("🏁 Завершить", callback_data=f"admin_finish_{event_id}"))
+        buttons.append(InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{event_id}"))
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[buttons])
+        
+        await callback.message.answer(
+            f"{status_emoji} *ID {event_id}:* {title}\n📌 Статус: {status_text}",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data == "admin_add_event_short")
+async def admin_add_event_short(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Нет прав!")
+        return
+    
+    await callback.message.answer("📝 Используй команду `/add_event` для добавления события")
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("admin_finish_"))
+async def admin_finish_event_callback(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Нет прав!")
+        return
+    
+    event_id = int(callback.data.split("_")[2])
+    event = get_event(event_id)
+    
+    if not event:
+        await callback.answer("❌ Событие не найдено!", show_alert=True)
+        return
+    
+    if event[4] != 'active':
+        await callback.answer("⚠️ Событие уже завершено!", show_alert=True)
+        return
+    
+    options = json.loads(event[3])
+    buttons = [[InlineKeyboardButton(f"🏆 {opt}", callback_data=f"admin_winner_{event_id}_{opt}")] for opt in options.keys()]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    
+    await callback.message.edit_text(
+        f"📋 *{event[1]}*\n\nВыбери победителя:",
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("admin_winner_"))
+async def admin_set_winner(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Нет прав!")
+        return
+    
+    _, _, event_id_str, winner = callback.data.split("_", 3)
+    event_id = int(event_id_str)
+    
+    winners_count, points = finish_event(event_id, winner)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"✅ *Событие завершено!*\n\n"
+        f"🏆 Победитель: *{winner}*\n"
+        f"💰 Начислено: *{points} баллов* ({winners_count} чел.)",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+# ========== УДАЛЕНИЕ СОБЫТИЙ ==========
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("admin_delete_"))
+async def admin_delete_event_callback(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Нет прав!", show_alert=True)
+        return
+    
+    event_id = int(callback.data.split("_")[2])
+    
+    cursor.execute("SELECT id, title FROM events WHERE id = ?", (event_id,))
+    event = cursor.fetchone()
+    
+    if not event:
+        await callback.answer("❌ Событие не найдено!", show_alert=True)
+        return
+    
+    # Удаляем событие
+    cursor.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    db_conn.commit()
+    
+    # Удаляем связанные прогнозы
+    cursor.execute("DELETE FROM bets WHERE event_id = ?", (event_id,))
+    db_conn.commit()
+    
+    await callback.message.delete()
+    await callback.answer(f"✅ Событие '{event[1]}' удалено!", show_alert=True)
+    
+    # Отправляем подтверждение в чат
+    await callback.message.answer(f"🗑 Событие *{event[1]}* (ID: {event_id}) удалено из базы.", parse_mode="Markdown")
+
+@dp.message_handler(commands=['delete_event'])
+async def delete_event_cmd(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав!")
+        return
+    
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.answer(
+            "📝 *Как удалить событие:*\n\n`/delete_event ID`\n\nПример: `/delete_event 5`\n\nИспользуй `/admin` → 'Список событий' чтобы увидеть ID",
+            parse_mode="Markdown"
+        )
+        return
+    
+    try:
+        event_id = int(parts[1])
+    except ValueError:
+        await message.answer("❌ ID должен быть числом!")
+        return
+    
+    cursor.execute("SELECT id, title FROM events WHERE id = ?", (event_id,))
+    event = cursor.fetchone()
+    
+    if not event:
+        await message.answer(f"❌ Событие с ID `{event_id}` не найдено!", parse_mode="Markdown")
+        return
+    
+    cursor.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    cursor.execute("DELETE FROM bets WHERE event_id = ?", (event_id,))
+    db_conn.commit()
+    
+    await message.answer(f"✅ Событие *{event[1]}* (ID: {event_id}) удалено!", parse_mode="Markdown")
+
+
+
+@dp.message_handler(commands=['list_events'])
+async def list_events_cmd(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав!")
+        return
+    
+    cursor.execute("SELECT id, title, status FROM events ORDER BY id DESC")
+    events = cursor.fetchall()
+    
+    if not events:
+        await message.answer("📭 Нет событий")
+        return
+    
+    text = "📋 *Список событий:*\n\n"
+    for event in events:
+        status_emoji = "🟢" if event[2] == "active" else "🔴"
+        text += f"{status_emoji} ID: `{event[0]}` — {event[1]}\n"
+    
+    await message.answer(text, parse_mode="Markdown")
+
+
 # ========== ЗАПУСК ==========
 if __name__ == "__main__":
     print("🚀 Бот спортивных прогнозов запущен!")
