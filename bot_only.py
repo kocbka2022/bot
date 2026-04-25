@@ -11,7 +11,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 # ========== КОНФИГ ==========
-BOT_TOKEN = "8769773881:AAEBc7dTnQV4itt2tjmoIjaFoI922V-LzT8"  # ВСТАВЬ СВОЙ ТОКЕН
+BOT_TOKEN = "8769773881:AAHTAqNMM69ddflLgANr2JIbBcJbuUYAPNM"  # ВСТАВЬ СВОЙ ТОКЕН
 ADMIN_IDS = [6141160793]
 WEB_APP_URL = "https://api-production-5769e.up.railway.app/miniapp"
 
