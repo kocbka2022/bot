@@ -105,7 +105,7 @@ dp = Dispatcher(bot, storage=storage)
 from aiogram.types import KeyboardButton, WebAppInfo, ReplyKeyboardMarkup
 
 # URL Mini App (замени после деплоя второго сервиса)
-WEB_APP_URL = "faithful-patience-production-a1a0.up.railway.app/miniapp"
+WEB_APP_URL = "api-production-5769e.up.railway.app/miniapp"
 web_app = WebAppInfo(url=WEB_APP_URL)
 
 main_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
