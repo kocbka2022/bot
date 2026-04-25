@@ -140,6 +140,7 @@ async def start(message: types.Message):
 @dp.message_handler(Text(equals="📋 Активные события"))
 async def show_events(message: types.Message):
     events = get_active_events()
+    print(f"DEBUG: найдено событий - {len(events)}")  # Добавь эту строку
     if not events:
         await message.answer("😔 Нет активных событий\n\nДобавь через /add_event")
         return
@@ -266,6 +267,30 @@ async def finish_event_cmd(message: types.Message):
         parse_mode="Markdown"
     )
 
+@dp.message_handler(commands=['check_events'])
+async def check_events(message: types.Message):
+    cursor.execute("SELECT id, title, status FROM events")
+    rows = cursor.fetchall()
+    if not rows:
+        await message.answer("❌ Нет событий в базе")
+    else:
+        text = "📋 События в базе:\n\n"
+        for row in rows:
+            text += f"ID: {row[0]}\nНазвание: {row[1]}\nСтатус: {row[2]}\n\n"
+        await message.answer(text)
+
+
+@dp.message_handler(commands=['debug_events'])
+async def debug_events(message: types.Message):
+    cursor.execute("SELECT * FROM events")
+    rows = cursor.fetchall()
+    if not rows:
+        await message.answer("❌ Нет событий")
+    else:
+        for row in rows:
+            await message.answer(f"ID: {row[0]}, Title: {row[1]}, Status: {row[4]}, Created: {row[6]}")
+
+
 if __name__ == "__main__":
     print("🚀 Бот спортивных прогнозов запущен!")
     print("👑 Админ: /add_event, /finish")
@@ -273,14 +298,4 @@ if __name__ == "__main__":
 
                         
                            
-                           @dp.message_handler(commands=['check_events'])
-async def check_events(message: types.Message):
-    cursor.execute("SELECT id, title, status FROM events")
-    rows = cursor.fetchall()
-    if not rows:
-        await message.answer("Нет событий в базе")
-    else:
-        text = "События в базе:\n"
-        for row in rows:
-            text += f"ID: {row[0]}, Title: {row[1]}, Status: {row[2]}\n"
-        await message.answer(text)
+                          
