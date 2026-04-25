@@ -48,7 +48,11 @@ def add_event(title, description, options):
 
 def get_active_events():
     cursor.execute("SELECT * FROM events WHERE status = 'active' ORDER BY created_at DESC")
-    return cursor.fetchall()
+    rows = cursor.fetchall()
+    print(f"Найдено активных событий: {len(rows)}")
+    for row in rows:
+        print(f"Событие: {row[1]}, статус: {row[4]}")
+    return rows
 
 def get_event(event_id):
     cursor.execute("SELECT * FROM events WHERE id = ?", (event_id,))
