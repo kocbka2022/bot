@@ -9,10 +9,44 @@ from fastapi.templating import Jinja2Templates
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# Подключаем базу данных
+# Функция для получения БД с созданием таблиц
 def get_db():
     conn = sqlite3.connect("sports_bot.db", check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Создаём таблицы, если их нет
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            description TEXT,
+            options TEXT,
+            status TEXT DEFAULT 'active',
+            winner TEXT,
+            created_at TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            event_id INTEGER,
+            selected_option TEXT,
+            bet_time TIMESTAMP,
+            is_win BOOLEAN DEFAULT 0,
+            points_earned INTEGER DEFAULT 0
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            full_name TEXT,
+            points INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
     return conn
 
 @app.get("/miniapp", response_class=HTMLResponse)
